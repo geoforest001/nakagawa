@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>中川村マップ</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<style>
+html,body{margin:0;height:100%;font-family:-apple-system,"Hiragino Sans",sans-serif}
+#map{position:absolute;inset:0}
+#panel{position:absolute;top:10px;left:10px;background:#fff;border-radius:8px;box-shadow:0 1px 6px #0004;padding:10px 12px;font-size:13px;max-width:220px}
+#panel h1{font-size:15px;margin:0 0 6px}
+#panel label{display:block;margin:3px 0;cursor:pointer}
+#panel .sec{margin-top:8px;font-weight:bold;color:#555}
+#panel input[type=range]{width:100%}
+#panel.min .body{display:none}
+#tg{float:right;cursor:pointer;color:#06c}
+#attr{position:absolute;bottom:0;right:0;background:#fffc;font-size:10px;padding:1px 4px}
+</style></head><body>
+<div id="map"></div>
+<div id="panel"><span id="tg">隠す</span><h1>中川村マップ</h1>
+<div class="body">
+<div class="sec">背景</div>
+<label><input type="radio" name="base" value="std" checked>地理院 標準</label>
+<label><input type="radio" name="base" value="pale">地理院 淡色</label>
+<label><input type="radio" name="base" value="photo">空中写真</label>
+<div class="sec">重ねる</div>
+<label><input type="checkbox" id="slope">傾斜量図</label>
+<label><input type="checkbox" id="shade">陰影起伏図</label>
+<label><input type="checkbox" id="relief">色別標高図</label>
+<label><input type="checkbox" id="mask" checked>村外を暗くする</label>
+<label><input type="checkbox" id="towns" checked>地区名</label>
+<div class="sec">重ねの濃さ</div>
+<input type="range" id="op" min="0.1" max="1" step="0.05" value="0.6">
+</div></div>
+<div id="attr">出典：国土地理院、OpenStreetMap（村境）</div>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+const G='https://cyberjapandata.gsi.go.jp/xyz/';
+const src=(p,ext='png',max=18)=>({type:'raster',tiles:[G+p+'/{z}/{x}/{y}.'+ext],tileSize:256,maxzoom:max,attribution:'国土地理院'});
+const map=new maplibregl.Map({container:'map',center:[137.97,35.64],zoom:11.5,
+ style:{version:8,glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+ sources:{std:src('std'),pale:src('pale'),photo:src('seamlessphoto','jpg'),
+  slope:src('slopemap','png',15),shade:src('hillshademap','png',16),relief:src('relief','png',15)},
+ layers:[
+  {id:'std',type:'raster',source:'std'},
+  {id:'pale',type:'raster',source:'pale',layout:{visibility:'none'}},
+  {id:'photo',type:'raster',source:'photo',layout:{visibility:'none'}},
+  {id:'relief',type:'raster',source:'relief',layout:{visibility:'none'}},
+  {id:'shade',type:'raster',source:'shade',layout:{visibility:'none'}},
+  {id:'slope',type:'raster',source:'slope',layout:{visibility:'none'}}]},
+ maxBounds:[[137.7,35.45],[138.25,35.82]]});
+map.addControl(new maplibregl.NavigationControl());
+map.addControl(new maplibregl.ScaleControl({unit:'metric'}));
+map.addControl(new maplibregl.GeolocateControl({positionOptions:{enableHighAccuracy:true},trackUserLocation:true}),'top-right');
+map.on('load',async()=>{
+ const b=await (await fetch('data/boundary.geojson')).json();
+ const t=await (await fetch('data/towns.geojson')).json();
+ const ring=b.features[0].geometry; const rings=ring.type==='Polygon'?[ring.coordinates[0]]:ring.coordinates.map(p=>p[0]);
+ map.addSource('mask',{type:'geojson',data:{type:'Feature',geometry:{type:'Polygon',coordinates:[[[130,30],[145,30],[145,45],[130,45],[130,30]],...rings]}}});
+ map.addSource('bd',{type:'geojson',data:b});
+ map.addSource('towns',{type:'geojson',data:t});
+ map.addLayer({id:'mask',type:'fill',source:'mask',paint:{'fill-color':'#000','fill-opacity':0.45}});
+ map.addLayer({id:'bd',type:'line',source:'bd',paint:{'line-color':'#d22','line-width':2.5,'line-dasharray':[3,2]}});
+ map.addLayer({id:'towns',type:'symbol',source:'towns',layout:{'text-field':['get','name'],'text-font':['Open Sans Regular'],'text-size':16},paint:{'text-color':'#222','text-halo-color':'#fff','text-halo-width':2}});
+ const bb=new maplibregl.LngLatBounds();rings.flat().forEach(c=>bb.extend(c));
+ map.fitBounds(bb,{padding:30,animation:false});
+ map.setMaxBounds([[bb.getWest()-0.15,bb.getSouth()-0.12],[bb.getEast()+0.15,bb.getNorth()+0.12]]);
+ setOp();
+});
+const vis=(id,on)=>map.getLayer(id)&&map.setLayoutProperty(id,'visibility',on?'visible':'none');
+document.querySelectorAll('[name=base]').forEach(r=>r.onchange=()=>['std','pale','photo'].forEach(i=>vis(i,r.value===i&&r.checked)));
+[['slope','slope'],['shade','shade'],['relief','relief'],['mask','mask'],['towns','towns']].forEach(([i,l])=>document.getElementById(i).onchange=e=>vis(l,e.target.checked));
+function setOp(){const v=+document.getElementById('op').value;['slope','shade','relief'].forEach(i=>map.setPaintProperty(i,'raster-opacity',v))}
+document.getElementById('op').oninput=()=>map.isStyleLoaded()&&setOp();
+document.getElementById('tg').onclick=e=>{const p=document.getElementById('panel');p.classList.toggle('min');e.target.textContent=p.classList.contains('min')?'表示':'隠す'};
+</script></body></html>
