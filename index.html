@@ -22,6 +22,7 @@ html,body{margin:0;height:100%;font-family:-apple-system,"Hiragino Sans",sans-se
 <label><input type="radio" name="base" value="cs" checked>CS立体図</label>
 <label><input type="radio" name="base" value="a60">60年代航空写真</label>
 <label><input type="radio" name="base" value="a70">70年代航空写真</label>
+<label><input type="radio" name="base" value="now">最新の航空写真</label>
 <div class="sec">表示</div>
 <label><input type="checkbox" id="mask" checked>村外を暗くする</label>
 <label><input type="checkbox" id="towns" checked>地区名</label>
@@ -35,11 +36,12 @@ const map=new maplibregl.Map({container:'map',center:[137.97,35.64],zoom:11.5,
  style:{version:8,glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
  sources:{
   cs:{type:'raster',tiles:['https://tile.geospatial.jp/CS/VER2/{z}/{x}/{y}.png'],tileSize:256,maxzoom:17,attribution:'長野県CS立体図（G空間情報センター）'},
-  a60:src('ort_old10','png',17),a70:src('gazo1','jpg',17)},
+  a60:src('ort_old10','png',17),a70:src('gazo1','jpg',17),now:src('seamlessphoto','jpg',18)},
  layers:[
   {id:'cs',type:'raster',source:'cs'},
   {id:'a60',type:'raster',source:'a60',layout:{visibility:'none'}},
-  {id:'a70',type:'raster',source:'a70',layout:{visibility:'none'}}]},
+  {id:'a70',type:'raster',source:'a70',layout:{visibility:'none'}},
+  {id:'now',type:'raster',source:'now',layout:{visibility:'none'}}]},
  maxBounds:[[137.7,35.45],[138.25,35.82]]});
 map.addControl(new maplibregl.NavigationControl());
 map.addControl(new maplibregl.ScaleControl({unit:'metric'}));
@@ -59,7 +61,7 @@ map.on('load',async()=>{
  map.setMaxBounds([[bb.getWest()-0.15,bb.getSouth()-0.12],[bb.getEast()+0.15,bb.getNorth()+0.12]]);
 });
 const vis=(id,on)=>map.getLayer(id)&&map.setLayoutProperty(id,'visibility',on?'visible':'none');
-document.querySelectorAll('[name=base]').forEach(r=>r.onchange=()=>['cs','a60','a70'].forEach(i=>vis(i,r.value===i&&r.checked)));
+document.querySelectorAll('[name=base]').forEach(r=>r.onchange=()=>['cs','a60','a70','now'].forEach(i=>vis(i,r.value===i&&r.checked)));
 [['mask','mask'],['towns','towns']].forEach(([i,l])=>document.getElementById(i).onchange=e=>vis(l,e.target.checked));
 document.getElementById('tg').onclick=e=>{const p=document.getElementById('panel');p.classList.toggle('min');e.target.textContent=p.classList.contains('min')?'表示':'隠す'};
 </script></body></html>
