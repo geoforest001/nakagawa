@@ -74,18 +74,25 @@ const map2=new maplibregl.Map({container:'map2',center:[137.97,35.64],zoom:11.5,
   cs:{type:'raster',tiles:['https://tile.geospatial.jp/CS/VER2/{z}/{x}/{y}.png'],tileSize:256,maxzoom:17},
   a60:src('ort_old10','png',17),a70:src('gazo1','jpg',17),now:src('seamlessphoto','jpg',18)},
  layers:ids.map(i=>({id:i,type:'raster',source:i,layout:{visibility:'none'}}))}});
-const sync=()=>map2.jumpTo({center:map.getCenter(),zoom:map.getZoom(),bearing:map.getBearing(),pitch:map.getPitch()});
-map.on('move',sync);map.on('resize',()=>{map2.resize();sync()});
+let mulOn=false,last='';
+const sync=(force)=>{if(!mulOn)return;const c=map.getCenter(),k=[c.lng,c.lat,map.getZoom(),map.getBearing(),map.getPitch()].join();
+ if(!force&&k===last)return;last=k;map2.jumpTo({center:c,zoom:map.getZoom(),bearing:map.getBearing(),pitch:map.getPitch()})};
+map.on('move',()=>sync());map.on('resize',()=>{if(mulOn){map2.resize();sync(true)}});
 document.querySelectorAll('[name=mul]').forEach(r=>r.onchange=()=>{
- const on=r.value!=='';document.getElementById('map2').style.display=on?'block':'none';
- if(on){map2.resize();sync()}
+ const on=r.value!=='';mulOn=on;document.getElementById('map2').style.display=on?'block':'none';
+ if(on){map2.resize();if(typeof setTerrain2==='function')setTerrain2();sync(true)}else if(typeof setTerrain2==='function')setTerrain2()
  ids.forEach(i=>map2.setLayoutProperty(i,'visibility',r.value===i?'visible':'none'))});
 document.getElementById('mop').oninput=e=>document.getElementById('map2').style.opacity=e.target.value;
 
 /* 3D表示：国土地理院の標高タイル(dem_png=10mメッシュ)をterrarium形式に変換して地形にする */
 (()=>{const N=256,ZMAX=14;let cv=null;
  const enc=h=>{const v=Math.round((h+32768)*256);return [(v>>16)&255,(v>>8)&255,v&255]};
+ const cache=new Map();
  async function tile(z,x,y){
+  const key=z+'/'+x+'/'+y;
+  if(!cache.has(key)){cache.set(key,tile0(z,x,y));if(cache.size>300)cache.delete(cache.keys().next().value)}
+  return (await cache.get(key)).slice(0)}
+ async function tile0(z,x,y){
   if(!cv){cv=document.createElement('canvas');cv.width=cv.height=N}
   const ctx=cv.getContext('2d',{willReadFrequently:true});const out=ctx.createImageData(N,N);let data=null;
   try{const r=await fetch(G+'dem_png/'+z+'/'+x+'/'+y+'.png');
@@ -106,10 +113,12 @@ document.getElementById('mop').oninput=e=>document.getElementById('map2').style.
   await Promise.all([ready(map),ready(map2)]);
   for(const m of [map,map2])if(!m.getSource('dem3d'))m.addSource('dem3d',DEM);
   const e=+ex.value;
-  if(chk.checked){for(const m of [map,map2])m.setTerrain({source:'dem3d',exaggeration:e});
+  if(chk.checked){map.setTerrain({source:'dem3d',exaggeration:e});if(mulOn)map2.setTerrain({source:'dem3d',exaggeration:e});
    map.setMaxPitch(80);map2.setMaxPitch(80);
    if(map.getPitch()<30)map.easeTo({pitch:60,bearing:-20,duration:900})}
-  else{for(const m of [map,map2])m.setTerrain(null);map.easeTo({pitch:0,bearing:0,duration:600})}}
+  else{map.setTerrain(null);map2.setTerrain(null);map.easeTo({pitch:0,bearing:0,duration:600})}}
+ window.setTerrain2=async()=>{await ready(map2);if(!map2.getSource('dem3d'))map2.addSource('dem3d',DEM);
+  if(mulOn&&chk.checked)map2.setTerrain({source:'dem3d',exaggeration:+ex.value});else map2.setTerrain(null)};
  chk.onchange=()=>{box.style.display=chk.checked?'block':'none';apply()};
  ex.oninput=()=>{if(chk.checked)apply()};
 })();
