@@ -14,6 +14,7 @@ html,body{margin:0;height:100%;font-family:-apple-system,"Hiragino Sans",sans-se
 #panel input[type=range]{width:100%}
 #panel.min .body{display:none}
 #tg{float:right;cursor:pointer;color:#06c}
+#msg{position:absolute;bottom:34px;right:10px;background:#333e;color:#fff;border-radius:6px;padding:6px 10px;font-size:12px;display:none;max-width:240px}
 #attr{position:absolute;bottom:0;right:0;background:#fffc;font-size:10px;padding:1px 4px}
 </style></head><body>
 <div id="map"></div><div id="map2"></div>
@@ -30,23 +31,30 @@ html,body{margin:0;height:100%;font-family:-apple-system,"Hiragino Sans",sans-se
 <label><input type="checkbox" id="mask" checked>村外を暗くする</label>
 <label><input type="checkbox" id="towns" checked>地区名</label>
 </div></div>
+<div id="msg"></div>
 <div id="attr">出典：長野県CS立体図（G空間情報センター）、国土地理院（空中写真）、OpenStreetMap（村境）</div>
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script>
 const G='https://cyberjapandata.gsi.go.jp/xyz/';
 const src=(p,ext='png',max=18)=>({type:'raster',tiles:[G+p+'/{z}/{x}/{y}.'+ext],tileSize:256,maxzoom:max,attribution:'国土地理院'});
+let boundaryGeom=null;
 const map=new maplibregl.Map({container:'map',center:[137.97,35.64],zoom:11.5,
  style:{version:8,glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
  sources:{pale:src('pale','png',18)},
- layers:[{id:'pale',type:'raster',source:'pale'}]},
- maxBounds:[[137.7,35.45],[138.25,35.82]]});
+ layers:[{id:'pale',type:'raster',source:'pale'}]}});
 map.addControl(new maplibregl.NavigationControl());
 map.addControl(new maplibregl.ScaleControl({unit:'metric'}));
-map.addControl(new maplibregl.GeolocateControl({positionOptions:{enableHighAccuracy:true},trackUserLocation:true}),'top-right');
+const geo=new maplibregl.GeolocateControl({positionOptions:{enableHighAccuracy:true,timeout:15000},trackUserLocation:true,fitBoundsOptions:{maxZoom:15}});
+map.addControl(geo,'top-right');
+let mt;const say=t=>{const m=document.getElementById('msg');m.textContent=t;m.style.display='block';clearTimeout(mt);mt=setTimeout(()=>m.style.display='none',6000)};
+geo.on('error',e=>say(e.code===1?'位置情報が許可されていません':e.code===3?'現在地の取得がタイムアウトしました':'現在地を取得できませんでした'));
+geo.on('geolocate',e=>{const g=boundaryGeom;if(g){const ll=[e.coords.longitude,e.coords.latitude];const polys=g.type==='Polygon'?[g.coordinates]:g.coordinates;
+ const inside=polys.some(p=>{const r=p[0];let c=false;for(let i=0,j=r.length-1;i<r.length;j=i++){if((r[i][1]>ll[1])!==(r[j][1]>ll[1])&&ll[0]<(r[j][0]-r[i][0])*(ll[1]-r[i][1])/(r[j][1]-r[i][1])+r[i][0])c=!c}return c});
+ if(!inside)say('現在地は中川村の外です（精度 約'+Math.round(e.coords.accuracy)+'m）')}});
 map.on('load',async()=>{
  const b=await (await fetch('data/boundary.geojson')).json();
  const t=await (await fetch('data/towns.geojson')).json();
- const ring=b.features[0].geometry; const rings=ring.type==='Polygon'?[ring.coordinates[0]]:ring.coordinates.map(p=>p[0]);
+ const ring=b.features[0].geometry;boundaryGeom=ring; const rings=ring.type==='Polygon'?[ring.coordinates[0]]:ring.coordinates.map(p=>p[0]);
  map.addSource('mask',{type:'geojson',data:{type:'Feature',geometry:{type:'Polygon',coordinates:[[[130,30],[145,30],[145,45],[130,45],[130,30]],...rings]}}});
  map.addSource('bd',{type:'geojson',data:b});
  map.addSource('towns',{type:'geojson',data:t});
@@ -55,7 +63,6 @@ map.on('load',async()=>{
  map.addLayer({id:'towns',type:'symbol',source:'towns',layout:{'text-field':['get','name'],'text-font':['Open Sans Regular'],'text-size':16},paint:{'text-color':'#222','text-halo-color':'#fff','text-halo-width':2}});
  const bb=new maplibregl.LngLatBounds();rings.flat().forEach(c=>bb.extend(c));
  map.fitBounds(bb,{padding:30,animation:false});
- map.setMaxBounds([[bb.getWest()-0.15,bb.getSouth()-0.12],[bb.getEast()+0.15,bb.getNorth()+0.12]]);
 });
 
 /* 乗算レイヤ：同じ視点の2枚目の地図をCSSのmultiplyで重ねる */
