@@ -28,6 +28,8 @@ html,body{margin:0;height:100%;font-family:-apple-system,"Hiragino Sans",sans-se
 <label><input type="radio" name="mul" value="a60">1960年代の写真</label>
 <div>濃さ <input type="range" id="mop" min="0.1" max="1" step="0.05" value="1"></div>
 <div class="sec">表示</div>
+<label><input type="checkbox" id="t3d">3D表示（10mメッシュ標高）</label>
+<div id="t3dop" style="display:none">強調 <input type="range" id="t3dex" min="1" max="3" step="0.5" value="1.5"></div>
 <label><input type="checkbox" id="mask" checked>村外を暗くする</label>
 <label><input type="checkbox" id="towns" checked>地区名</label>
 </div></div>
@@ -79,6 +81,38 @@ document.querySelectorAll('[name=mul]').forEach(r=>r.onchange=()=>{
  if(on){map2.resize();sync()}
  ids.forEach(i=>map2.setLayoutProperty(i,'visibility',r.value===i?'visible':'none'))});
 document.getElementById('mop').oninput=e=>document.getElementById('map2').style.opacity=e.target.value;
+
+/* 3D表示：国土地理院の標高タイル(dem_png=10mメッシュ)をterrarium形式に変換して地形にする */
+(()=>{const N=256,ZMAX=14;let cv=null;
+ const enc=h=>{const v=Math.round((h+32768)*256);return [(v>>16)&255,(v>>8)&255,v&255]};
+ async function tile(z,x,y){
+  if(!cv){cv=document.createElement('canvas');cv.width=cv.height=N}
+  const ctx=cv.getContext('2d',{willReadFrequently:true});const out=ctx.createImageData(N,N);let data=null;
+  try{const r=await fetch(G+'dem_png/'+z+'/'+x+'/'+y+'.png');
+   if(r.ok){const bm=await createImageBitmap(await r.blob(),{colorSpaceConversion:'none',premultiplyAlpha:'none'});
+    ctx.clearRect(0,0,N,N);ctx.drawImage(bm,0,0);data=ctx.getImageData(0,0,N,N).data}}catch(e){}
+  const flat=enc(0);
+  for(let i=0;i<N*N;i++){let rgb=flat;
+   if(data&&data[4*i+3]>0){const q=data[4*i]*65536+data[4*i+1]*256+data[4*i+2];
+    if(q<8388608)rgb=enc(q*0.01);else if(q>8388608)rgb=enc((q-16777216)*0.01)}
+   out.data[4*i]=rgb[0];out.data[4*i+1]=rgb[1];out.data[4*i+2]=rgb[2];out.data[4*i+3]=255}
+  ctx.putImageData(out,0,0);
+  return (await new Promise(r=>cv.toBlob(r,'image/png'))).arrayBuffer()}
+ maplibregl.addProtocol('gsidem',async p=>{const m=p.url.match(/^gsidem:\/\/(\d+)\/(\d+)\/(\d+)/);return {data:await tile(+m[1],+m[2],+m[3])}});
+ const DEM={type:'raster-dem',tiles:['gsidem://{z}/{x}/{y}'],tileSize:N,maxzoom:ZMAX,encoding:'terrarium',attribution:'標高：国土地理院'};
+ const ready=m=>new Promise(r=>m.isStyleLoaded()?r():m.once('load',r));
+ const chk=document.getElementById('t3d'),ex=document.getElementById('t3dex'),box=document.getElementById('t3dop');
+ async function apply(){
+  await Promise.all([ready(map),ready(map2)]);
+  for(const m of [map,map2])if(!m.getSource('dem3d'))m.addSource('dem3d',DEM);
+  const e=+ex.value;
+  if(chk.checked){for(const m of [map,map2])m.setTerrain({source:'dem3d',exaggeration:e});
+   map.setMaxPitch(80);map2.setMaxPitch(80);
+   if(map.getPitch()<30)map.easeTo({pitch:60,bearing:-20,duration:900})}
+  else{for(const m of [map,map2])m.setTerrain(null);map.easeTo({pitch:0,bearing:0,duration:600})}}
+ chk.onchange=()=>{box.style.display=chk.checked?'block':'none';apply()};
+ ex.oninput=()=>{if(chk.checked)apply()};
+})();
 const vis=(id,on)=>map.getLayer(id)&&map.setLayoutProperty(id,'visibility',on?'visible':'none');
 [['mask','mask'],['towns','towns']].forEach(([i,l])=>document.getElementById(i).onchange=e=>vis(l,e.target.checked));
 document.getElementById('tg').onclick=e=>{const p=document.getElementById('panel');p.classList.toggle('min');e.target.textContent=p.classList.contains('min')?'表示':'隠す'};
